@@ -1,13 +1,15 @@
-# Healthcare AI Triage Assistant Infrastructure
+# PulseGuard AI Healthcare Triage Platform
 
-Local, demo-first infrastructure for a React + FastAPI + MongoDB + FAISS + OpenAI healthcare triage assistant. The assistant is designed to provide symptom guidance, emergency recommendations, disclaimers, and safe fallback responses. It must not provide a final medical diagnosis.
+Local, demo-first infrastructure and product shell for **PulseGuard AI**, a next-generation AI Healthcare Triage & Operational Intelligence platform. The experience is designed for multilingual patient intake, emergency escalation support, clinical operational awareness, and physician-assistive workflows.
+
+PulseGuard AI provides symptom guidance, escalation recommendations, safety disclaimers, and operational insights. It must not provide a final medical diagnosis.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  U["User"] --> FE["React frontend"]
-  FE --> BE["FastAPI backend"]
+  U["User"] --> FE["PulseGuard AI React command center"]
+  FE --> BE["FastAPI triage backend"]
   BE --> M["MongoDB"]
   BE --> VS["FAISS vector service"]
   VS --> OAI["OpenAI embeddings"]
@@ -22,7 +24,7 @@ flowchart LR
 
 ```text
 backend/                 FastAPI API with /chat, /health, /status, /metrics
-frontend/                React demo UI served by nginx
+frontend/                PulseGuard AI command center served by nginx
 vector-service/          FAISS search API and PDF ingestion pipeline
 infra/kind/              Kind cluster config
 k8s/base/                Kubernetes app manifests
@@ -104,8 +106,8 @@ The ingestion job chunks PDFs into roughly 400-token chunks, generates OpenAI em
 
 ## Kubernetes Components
 
-- `frontend`: React/nginx demo UI exposed on `localhost:8080`
-- `backend`: FastAPI API with OpenAI retry, timeout, fallback, and Prometheus metrics
+- `frontend`: PulseGuard AI React/nginx command center exposed on `localhost:8080`
+- `backend`: FastAPI triage API with safety constraints, OpenAI retry, timeout, fallback, MongoDB event capture, and Prometheus metrics
 - `mongodb`: single-pod MongoDB with PVC
 - `vector-service`: FAISS-backed search API with `/search`, `/health`, `/metrics`
 - `prometheus`: scrapes annotated backend and vector-service pods
@@ -152,7 +154,7 @@ helm upgrade --install loki grafana/loki -n monitoring -f monitoring/helm/loki-v
 
 ## Safety Guardrails
 
-The backend system prompt says not to diagnose, the emergency scoring is rule-based and conservative, and OpenAI failures return:
+The backend system prompt says not to diagnose or use certainty claims, the emergency scoring is rule-based and conservative, and OpenAI failures return:
 
 ```text
 Unable to confidently assess symptoms. Please consult a healthcare professional.
