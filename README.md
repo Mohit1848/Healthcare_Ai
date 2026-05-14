@@ -11,12 +11,21 @@ Latest frontend update:
 - Backend fields such as risk score, risk level, language, RAG chunks, clinical summary, guidance, safety actions, and escalation recommendation are rendered inside the command center.
 - Vite dev mode includes a proxy so `/api` forwards to `http://localhost:8080`.
 
+Latest backend update:
+
+- The backend now uses an AI Fusion provider layer with async OpenAI calls and optional Groq fallback.
+- Configuration is centralized in `backend/app/config/settings.py`.
+- MongoDB writes now use async Motor.
+- `/status` reports OpenAI and Groq key configuration.
+- `/chat` telemetry includes `provider_used` and `provider_latency_seconds`.
+
 ## Features
 
 - Cinematic React command center for patient intake, triage synthesis, escalation routing, and ICU-style operational review.
 - Live symptom submission from the frontend to the backend `/chat` API through `/api/chat`.
 - Rule-based emergency score with conservative high-risk keyword detection.
 - OpenAI-powered safe guidance with retry, timeout, and fallback behavior.
+- Optional Groq fallback when `GROQ_API_KEY` is configured.
 - RAG retrieval through a FAISS vector service backed by ingested medical PDFs.
 - MongoDB triage event persistence for session, message, score, risk level, language, and timestamp.
 - Prometheus metrics for request count, latency, active sessions, OpenAI failures, and triage risk score.
@@ -45,6 +54,8 @@ flowchart LR
 
 ```text
 backend/                  FastAPI API with /chat, /health, /status, /metrics
+backend/app/ai/           Async LLM provider layer: OpenAI primary, Groq fallback
+backend/app/config/       Environment-backed backend settings
 frontend/                 Vite React app, nginx config, Dockerfile
 frontend/src/             Active Health Guard command center source
 frontend/contributor-prototype/
@@ -153,6 +164,13 @@ telemetry
 
 The frontend now maps those fields directly into the Health Guard command center.
 
+LLM provider behavior:
+
+- OpenAI is the primary provider.
+- Groq is optional fallback if `GROQ_API_KEY` is configured.
+- If no provider succeeds, the backend returns the safe fallback guidance string and marks telemetry as `provider_used: fallback`.
+- The response contract stays compatible with the frontend command center.
+
 ## Prerequisites
 
 Install:
@@ -193,10 +211,12 @@ tools/kubectl.exe
 .\scripts\build-images.ps1
 ```
 
-3. Set your OpenAI key and deploy everything.
+3. Set your OpenAI key and deploy everything. Groq is optional.
 
 ```powershell
 $env:OPENAI_API_KEY="sk-your-key"
+# Optional fallback provider:
+$env:GROQ_API_KEY="gsk-your-key"
 .\scripts\deploy.ps1
 ```
 
@@ -248,7 +268,7 @@ The ingestion flow chunks PDFs, generates OpenAI embeddings, and writes a FAISS 
 ## Kubernetes Components
 
 - `frontend`: React/nginx Health Guard command center exposed on `localhost:8080`.
-- `backend`: FastAPI triage API with safety constraints, OpenAI retry, timeout, fallback, MongoDB event capture, and Prometheus metrics.
+- `backend`: FastAPI triage API with safety constraints, async OpenAI/Groq provider fallback, MongoDB event capture, and Prometheus metrics.
 - `mongodb`: single-pod MongoDB with PVC for triage events.
 - `vector-service`: FAISS-backed search API with `/search`, `/health`, and `/metrics`.
 - `prometheus`: scrapes annotated backend and vector-service pods.
@@ -293,6 +313,7 @@ helm upgrade --install loki grafana/loki -n monitoring -f monitoring/helm/loki-v
 - Frontend loads but live triage fails: confirm `http://localhost:8080/api/health` responds.
 - Vite dev UI cannot call `/api/chat`: make sure the deployed proxy stack is running on `localhost:8080`.
 - `openai_key_configured: false`: set `$env:OPENAI_API_KEY` and rerun `.\scripts\deploy.ps1`.
+- `groq_key_configured: false`: optional only. Set `$env:GROQ_API_KEY` before deploy if you want Groq fallback.
 - Empty RAG results: add PDFs under `data/medical-pdfs` and run `.\scripts\ingest-docs.ps1`.
 - Grafana dashboard has no data: hit `/api/chat` a few times, then wait 15-30 seconds for Prometheus scrapes.
 - MongoDB readiness is slow on first boot: check `kubectl -n healthcare-ai logs deployment/mongodb`.
@@ -319,3 +340,5 @@ The latest merged frontend work is:
 ```
 
 This commit changed the frontend from a standalone visual prototype into a project-integrated command center that uses the real backend triage workflow.
+
+The latest backend merge adds the AI Fusion backend provider model: async settings, Motor MongoDB access, OpenAI primary guidance, optional Groq fallback, and provider telemetry.

@@ -1,20 +1,24 @@
-import os
+import logging
 import time
 from typing import Any
 
 import httpx
 from fastapi import FastAPI
-from fastapi.responses import Response
-from openai import OpenAI
+from fastapi.responses import RedirectResponse, Response
+from motor.motor_asyncio import AsyncIOMotorClient
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Gauge, Histogram, generate_latest
 from pydantic import BaseModel, Field
-from pymongo import MongoClient
-from tenacity import retry, stop_after_attempt, wait_exponential
 
+from app.ai.llm_provider import llm_provider
+from app.config.settings import settings
+
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 FALLBACK_RESPONSE = "Unable to confidently assess symptoms. Please consult a healthcare professional."
 
-app = FastAPI(title="Healthcare AI Triage Backend", version="0.1.0")
+app = FastAPI(title="Healthcare AI Triage Backend", version="0.2.0")
 
 REQUEST_COUNT = Counter("backend_request_count", "Backend HTTP request count", ["endpoint"])
 API_LATENCY = Histogram("backend_api_latency_seconds", "Backend API latency", ["endpoint"])
@@ -23,6 +27,9 @@ OPENAI_REQUESTS = Counter("openai_requests_total", "OpenAI API requests")
 RAG_LATENCY = Histogram("rag_retrieval_latency_seconds", "RAG retrieval latency")
 ACTIVE_SESSIONS = Gauge("active_sessions", "Approximate active chat sessions")
 TRIAGE_RISK_SCORE = Gauge("triage_risk_score", "Latest triage risk score")
+
+mongo_client = AsyncIOMotorClient(settings.mongodb_uri, serverSelectionTimeoutMS=2000)
+db = mongo_client.get_default_database()
 
 
 class ChatRequest(BaseModel):
@@ -44,18 +51,6 @@ class ChatResponse(BaseModel):
     operational_insights: list[str]
     safety_actions: list[str]
     telemetry: dict[str, Any]
-
-
-def mongo_client() -> MongoClient:
-    return MongoClient(os.getenv("MONGODB_URI", "mongodb://mongodb:27017/healthcare_ai"))
-
-
-def openai_client() -> OpenAI:
-    return OpenAI(
-        api_key=os.getenv("OPENAI_API_KEY", "missing-key"),
-        timeout=float(os.getenv("OPENAI_TIMEOUT_SECONDS", "20")),
-        max_retries=0,
-    )
 
 
 def emergency_score(message: str) -> int:
@@ -95,10 +90,11 @@ def topology_stage(score: int) -> str:
     return "Patient Voice Intake"
 
 
-def operational_insights(message: str, score: int) -> list[str]:
+def operational_insights(message: str, score: int, provider_used: str) -> list[str]:
     insights = [
         "Patient-reported symptoms captured for triage review.",
         "Response uses probabilistic language and avoids diagnosis claims.",
+        f"Guidance provider used: {provider_used}.",
     ]
     if score >= 70:
         insights.append("Potential emergency indicators detected; escalation workflow should be prioritized.")
@@ -132,62 +128,59 @@ def safety_actions(score: int) -> list[str]:
 
 
 async def retrieve_context(message: str) -> list[str]:
-    vector_url = os.getenv("VECTOR_SERVICE_URL", "http://vector-service:8001/search")
     start = time.perf_counter()
     try:
         async with httpx.AsyncClient(timeout=5) as client:
-            response = await client.post(vector_url, json={"query": message, "top_k": 3})
+            response = await client.post(settings.vector_service_url, json={"query": message, "top_k": 3})
             response.raise_for_status()
             data = response.json()
             return [item["text"] for item in data.get("matches", [])]
-    except Exception:
+    except Exception as exc:
+        logger.warning("RAG retrieval failed. error=%s", exc)
         return []
     finally:
         RAG_LATENCY.observe(time.perf_counter() - start)
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=1, max=6))
-def generate_guidance(message: str, context: list[str], score: int) -> str:
+async def generate_guidance(message: str, context: list[str], score: int) -> tuple[str, str, float | None]:
     OPENAI_REQUESTS.inc()
-    prompt = (
-        "You are PulseGuard AI, a healthcare triage and operational intelligence assistant. "
-        "Do not diagnose. Use probabilistic language. Provide symptom guidance, escalation "
-        "recommendations when appropriate, and a short safety disclaimer.\n\n"
-        f"User symptoms: {message}\n"
-        f"Emergency score: {score}/100\n"
-        f"Retrieved medical context: {context}\n"
-    )
     try:
-        completion = openai_client().chat.completions.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            messages=[
-                {"role": "system", "content": "Never provide a final medical diagnosis or certainty claim."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.2,
+        ai_result = await llm_provider.generate_guidance(message, context, score)
+        latency = ai_result.get("latency")
+        return (
+            str(ai_result.get("guidance") or FALLBACK_RESPONSE),
+            str(ai_result.get("provider") or "unknown"),
+            float(latency) if latency is not None else None,
         )
-        return completion.choices[0].message.content or FALLBACK_RESPONSE
-    except Exception:
+    except Exception as exc:
         OPENAI_FAILURES.inc()
-        raise
+        logger.warning("LLM guidance failed; using fallback response. error=%s", exc)
+        return FALLBACK_RESPONSE, "fallback", None
+
+
+@app.get("/")
+async def root() -> RedirectResponse:
+    return RedirectResponse(url="/docs")
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
+async def health() -> dict[str, str]:
     REQUEST_COUNT.labels("/health").inc()
     return {"status": "healthy"}
 
 
 @app.get("/status")
-def status() -> dict[str, Any]:
+async def status() -> dict[str, Any]:
     REQUEST_COUNT.labels("/status").inc()
     checks: dict[str, Any] = {"api": "ok"}
     try:
-        mongo_client().admin.command("ping")
+        await mongo_client.admin.command("ping")
         checks["mongodb"] = "ok"
     except Exception as exc:
         checks["mongodb"] = f"error: {exc.__class__.__name__}"
-    checks["openai_key_configured"] = bool(os.getenv("OPENAI_API_KEY"))
+    checks["openai_key_configured"] = bool(settings.openai_api_key)
+    checks["groq_key_configured"] = bool(settings.groq_api_key)
+    checks["openai_model"] = settings.openai_model
     return checks
 
 
@@ -205,14 +198,11 @@ async def chat(payload: ChatRequest) -> ChatResponse:
         score = emergency_score(payload.message)
         TRIAGE_RISK_SCORE.set(score)
         context = await retrieve_context(payload.message)
-        try:
-            guidance = generate_guidance(payload.message, context, score)
-        except Exception:
-            guidance = FALLBACK_RESPONSE
+        guidance, provider_used, provider_latency = await generate_guidance(payload.message, context, score)
         level = risk_level(score)
         recommendation = "Seek emergency care now." if score >= 70 else "Monitor symptoms and consult a clinician if symptoms worsen."
         language = detect_language(payload.message)
-        insights = operational_insights(payload.message, score)
+        insights = operational_insights(payload.message, score, provider_used)
         actions = safety_actions(score)
         telemetry = {
             "risk_probability": round(score / 100, 2),
@@ -220,20 +210,23 @@ async def chat(payload: ChatRequest) -> ChatResponse:
             "language": language,
             "care_pathway": topology_stage(score),
             "diagnosis_mode": "disabled",
+            "provider_used": provider_used,
+            "provider_latency_seconds": provider_latency,
         }
         try:
-            mongo_client().healthcare_ai.triage_events.insert_one(
+            await db.triage_events.insert_one(
                 {
                     "session_id": payload.session_id,
                     "message": payload.message,
                     "score": score,
                     "risk_level": level,
                     "language": language,
+                    "provider_used": provider_used,
                     "created_at": time.time(),
                 }
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to write triage event to MongoDB. error=%s", exc)
         return ChatResponse(
             guidance=guidance,
             emergency_score=score,

@@ -1,5 +1,6 @@
 param(
-  [string]$OpenAiApiKey = $env:OPENAI_API_KEY
+  [string]$OpenAiApiKey = $env:OPENAI_API_KEY,
+  [string]$GroqApiKey = $env:GROQ_API_KEY
 )
 
 if (-not $OpenAiApiKey) {
@@ -14,9 +15,17 @@ if (-not (Test-Path $Kubectl)) {
 }
 
 & $Kubectl apply -f (Join-Path $Root "k8s\base\namespace.yaml")
-& $Kubectl -n healthcare-ai create secret generic openai-secret `
-  --from-literal=OPENAI_API_KEY=$OpenAiApiKey `
-  --dry-run=client -o yaml | & $Kubectl apply -f -
+
+$SecretArgs = @(
+  "-n", "healthcare-ai",
+  "create", "secret", "generic", "openai-secret",
+  "--from-literal=OPENAI_API_KEY=$OpenAiApiKey"
+)
+if ($GroqApiKey) {
+  $SecretArgs += "--from-literal=GROQ_API_KEY=$GroqApiKey"
+}
+$SecretArgs += @("--dry-run=client", "-o", "yaml")
+& $Kubectl @SecretArgs | & $Kubectl apply -f -
 & $Kubectl apply -k (Join-Path $Root "k8s\base")
 & $Kubectl apply -k (Join-Path $Root "monitoring")
 & $Kubectl -n healthcare-ai rollout status deployment/mongodb
