@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en" className="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>OpsPilot AI — Autonomous DevOps Command Center</title>
+  
+  <!-- Premium Google Fonts loaded for cinematic large headings and clean monospace telemetry logs -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;900&family=JetBrains+Mono:wght@400;500;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- React 18 CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  
+  <!-- Babel standalone CDN for JSX compilation -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- Tailwind CSS v3 Play CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Outfit', 'Inter', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          },
+          colors: {
+            red: {
+              critical: '#ef4444',
+            },
+            neon: {
+              green: '#10b981',
+            },
+            cyan: {
+              infra: '#06b6d4',
+            },
+            amber: {
+              warning: '#f59e0b',
+            }
+          },
+          animation: {
+            'fade-in': 'fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards',
+          },
+          keyframes: {
+            fadeIn: {
+              '0%': { opacity: '0', transform: 'translateY(10px)' },
+              '100%': { opacity: '1', transform: 'translateY(0)' },
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Custom global base styling for scrollbars and terminal glow blooms -->
+  <style>
+    body {
+      background-color: #040406;
+      margin: 0;
+      padding: 0;
+      overflow-x: hidden;
+      color: #f3f4f6;
+    }
+    
+    /* Sleek custom dark webkit scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.2);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(6, 182, 212, 0.4);
+    }
+  </style>
+</head>
+<body className="selection:bg-cyan-500 selection:text-black">
+  
+  <!-- Root React Mount Target -->
+  <div id="root"></div>
+
+  <!-- Sequentially Load Modular Components -->
+  <script type="text/babel" src="./components/framerMotionMimic.js"></script>
+  <script type="text/babel" src="./components/icons.js"></script>
+  <script type="text/babel" src="./components/CinematicIntro.js"></script>
+  <script type="text/babel" src="./components/Dashboard.js"></script>
+  <script type="text/babel" src="./app.js"></script>
+
+</body>
+</html>

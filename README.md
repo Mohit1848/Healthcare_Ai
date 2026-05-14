@@ -25,6 +25,8 @@ flowchart LR
 ```text
 backend/                 FastAPI API with /chat, /health, /status, /metrics
 frontend/                PulseGuard AI command center served by nginx
+frontend/contributor-prototype/
+                          Preserved standalone contributor prototype/reference UI
 vector-service/          FAISS search API and PDF ingestion pipeline
 infra/kind/              Kind cluster config
 k8s/base/                Kubernetes app manifests
