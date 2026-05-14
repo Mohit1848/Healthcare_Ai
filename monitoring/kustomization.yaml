@@ -1,0 +1,6 @@
+resources:
+  - prometheus/prometheus.yaml
+  - loki/loki.yaml
+  - promtail/promtail.yaml
+  - grafana/grafana.yaml
+

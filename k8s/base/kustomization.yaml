@@ -1,0 +1,7 @@
+resources:
+  - namespace.yaml
+  - mongodb.yaml
+  - vector-service.yaml
+  - backend.yaml
+  - frontend.yaml
+

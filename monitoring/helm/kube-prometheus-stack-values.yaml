@@ -1,0 +1,9 @@
+grafana:
+  adminUser: admin
+  adminPassword: admin
+prometheus:
+  prometheusSpec:
+    scrapeInterval: 15s
+    podMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelectorNilUsesHelmValues: false
+

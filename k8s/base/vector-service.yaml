@@ -1,0 +1,68 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: vector-pvc
+  namespace: healthcare-ai
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vector-service
+  namespace: healthcare-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vector-service
+  template:
+    metadata:
+      labels:
+        app: vector-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8001"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: vector-service
+          image: healthcare-ai/vector-service:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - secretRef:
+                name: openai-secret
+          env:
+            - name: VECTOR_DATA_DIR
+              value: /data/faiss
+          volumeMounts:
+            - name: vector-data
+              mountPath: /data/faiss
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: vector-data
+          persistentVolumeClaim:
+            claimName: vector-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vector-service
+  namespace: healthcare-ai
+spec:
+  selector:
+    app: vector-service
+  ports:
+    - port: 8001
+      targetPort: 8001
+
